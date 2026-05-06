@@ -10,7 +10,13 @@
 
 ## 2. 脚本入口
 
+- `scripts/profile-cloudflare-startup.mjs`、`scripts/startup-resource-profile.mjs` 必须使用 `.cursor/skills/nuxt-boot-timing/scripts/` 下同名脚本直接复制（允许覆盖），不要临时生成或手写实现。
+- Nuxt 根组件（通常 `app/app.vue`）必须补齐 mounted 标记：最后注册 `onMounted`，同步执行 `window.__TEENPATTI_APP_ROOT_MOUNTED__ = true` 与 `performance.mark('teenpatti-app-root-mounted')`。
+- TypeScript 项目需声明 `Window.__TEENPATTI_APP_ROOT_MOUNTED__` 类型，避免脚本接入后出现 TS 报错。
 - 在 `package.json` 的 `scripts` 中确认是否存在 profile 相关命令（例如 `profile:boot-resources`）。
+- `dev` 模式推荐使用：
+  - `profile:startup-resources:dev`: `n exec 22.19.0 env STARTUP_PROFILE_SERVER_MODE=dev node scripts/profile-cloudflare-startup.mjs`
+  - 不要写成 `pnpm dev && node ...`（`pnpm dev` 为常驻进程，后半段不会执行）。
 - 确认实际调用的 **Node 脚本路径**（如 `node scripts/boot-resource-profile.mjs`）。
 - **若不存在**：不得假定命令可用；应改为纯 CDP / DevTools 说明，或提示用户先接入脚本。
 - **若需临时接入**：可将「新增 profile 脚本 / 安装 Playwright」写入用户**待办**；自动化验证完成后，**询问用户是否协助清除**这些临时脚本与依赖声明（避免长期污染业务仓）。
@@ -26,6 +32,7 @@
 - 未安装依赖 → 先执行 `pnpm install`（或等价）。
 - 使用 Playwright 且首次拉仓 → 通常需要 `npx playwright install`（或项目文档指定的浏览器，如 `chromium`）。
 - 若存在 `engines.node` 或 `.nvmrc` → 版本不满足时先切换 Node。
+- 若使用 `better-sqlite3` 等原生模块，Node 版本切换后必须在目标版本下重装依赖，否则会出现 `NODE_MODULE_VERSION` 不匹配。
 
 ## 5. 运行 dev / preview 与目标 URL
 

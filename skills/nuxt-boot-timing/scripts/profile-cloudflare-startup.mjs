@@ -21,6 +21,10 @@ function log(message) {
   console.log(`[profile-cloudflare-startup] ${message}`);
 }
 
+function quoteShellArg(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function resolveCommand(binName) {
   const localBin = join(process.cwd(), 'node_modules', '.bin', binName);
   if (existsSync(localBin)) {
@@ -83,7 +87,20 @@ async function isHttpReady(url) {
 }
 
 function startPersistentCommand(command, args, opts = {}) {
-  const child = spawn(command, args, {
+  const fileDescriptorLimit = opts.fileDescriptorLimit;
+  const shouldRaiseFileDescriptorLimit =
+    Number.isFinite(fileDescriptorLimit) &&
+    Number(fileDescriptorLimit) > 0 &&
+    process.platform !== 'win32';
+  const spawnCommand = shouldRaiseFileDescriptorLimit ? 'sh' : command;
+  const spawnArgs = shouldRaiseFileDescriptorLimit
+    ? [
+        '-lc',
+        `ulimit -n ${Number(fileDescriptorLimit)} >/dev/null 2>&1 || true; exec ${[command, ...args].map(quoteShellArg).join(' ')}`,
+      ]
+    : args;
+
+  const child = spawn(spawnCommand, spawnArgs, {
     cwd: opts.cwd ?? process.cwd(),
     env: opts.env ?? process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -198,14 +215,35 @@ async function stopExistingLocalServerIfNeeded(serverUrl) {
 }
 
 const shouldRunBuild = !envBool('STARTUP_PROFILE_SKIP_ANALYZE');
-const serverUrl = process.env.STARTUP_PROFILE_URL || 'http://localhost:8788/';
+const serverMode = String(
+  process.env.STARTUP_PROFILE_SERVER_MODE || 'cloudflare'
+).toLowerCase();
+if (!['cloudflare', 'dev'].includes(serverMode)) {
+  throw new Error(
+    `不支持的 STARTUP_PROFILE_SERVER_MODE=${serverMode}（仅支持 cloudflare 或 dev）`
+  );
+}
+const defaultServerUrl =
+  serverMode === 'dev' ? 'http://localhost:3000/' : 'http://localhost:8788/';
+const serverUrl = process.env.STARTUP_PROFILE_URL || defaultServerUrl;
 const serverReadyTimeoutMs = envInt('STARTUP_PROFILE_SERVER_WAIT_MS', 120000);
 const useRemote = envBool('STARTUP_PROFILE_CF_REMOTE');
 const wranglerCommand = resolveCommand('wrangler');
+const pnpmCommand = resolveCommand('pnpm');
 const nodeCommand = process.execPath;
 const parsedServerUrl = new URL(serverUrl);
 const wranglerPort = parsedServerUrl.port || '8788';
 const wranglerArgs = ['--cwd', 'dist', 'pages', 'dev', '--port', wranglerPort];
+const devArgsRaw = String(process.env.STARTUP_PROFILE_DEV_ARGS || '').trim();
+const devArgs = devArgsRaw ? devArgsRaw.split(/\s+/).filter(Boolean) : ['dev'];
+const devUlimitNoFile = envInt('STARTUP_PROFILE_DEV_ULIMIT_NOFILE', 65536);
+const devUsePolling = !envBool('STARTUP_PROFILE_DEV_DISABLE_POLLING');
+const devPollIntervalMs = envInt('STARTUP_PROFILE_DEV_POLL_INTERVAL_MS', 1000);
+const devPort = parsedServerUrl.port || '3000';
+const resolvedDevArgs =
+  devArgs.length === 1 && devArgs[0] === 'dev'
+    ? ['dev', '--port', devPort]
+    : devArgs;
 
 if (useRemote) {
   wranglerArgs.push('--remote');
@@ -213,10 +251,14 @@ if (useRemote) {
   wranglerArgs.push('--local');
 }
 
-let wranglerChild;
+let serverChild;
 
 const cleanup = async () => {
-  await terminateChild(wranglerChild, 'wrangler pages dev');
+  const serverName =
+    serverMode === 'dev'
+      ? `pnpm ${resolvedDevArgs.join(' ')}`
+      : 'wrangler pages dev';
+  await terminateChild(serverChild, serverName);
 };
 
 process.on('SIGINT', async () => {
@@ -230,23 +272,55 @@ process.on('SIGTERM', async () => {
 });
 
 try {
-  if (shouldRunBuild) {
+  if (serverMode === 'cloudflare' && shouldRunBuild) {
     log('运行 build');
-    await runCommand(resolveCommand('pnpm'), ['build']);
-  } else {
+    await runCommand(pnpmCommand, ['build']);
+  } else if (serverMode === 'cloudflare') {
     log('跳过 build（STARTUP_PROFILE_SKIP_ANALYZE=1）');
+  } else if (shouldRunBuild) {
+    log('dev 模式下忽略 build（仅 cloudflare 模式会构建）');
+  } else {
+    log('dev 模式：跳过 build');
   }
 
   await stopExistingLocalServerIfNeeded(serverUrl);
 
-  log(
-    `启动 Cloudflare Pages 本地服务: ${wranglerCommand} ${wranglerArgs.join(' ')}`
-  );
-  wranglerChild = startPersistentCommand(wranglerCommand, wranglerArgs);
-
-  wranglerChild.on('error', error => {
-    console.error('[profile-cloudflare-startup] wrangler 启动失败:', error);
-  });
+  if (serverMode === 'cloudflare') {
+    log(
+      `启动 Cloudflare Pages 本地服务: ${wranglerCommand} ${wranglerArgs.join(' ')}`
+    );
+    serverChild = startPersistentCommand(wranglerCommand, wranglerArgs);
+    serverChild.on('error', error => {
+      console.error('[profile-cloudflare-startup] wrangler 启动失败:', error);
+    });
+  } else {
+    log(`启动 Nuxt dev 服务: ${pnpmCommand} ${resolvedDevArgs.join(' ')}`);
+    if (process.platform !== 'win32') {
+      log(`提升文件句柄上限（ulimit -n）到: ${devUlimitNoFile}`);
+    }
+    if (devUsePolling) {
+      log(
+        `启用 polling 文件监听以规避 EMFILE（interval=${devPollIntervalMs}ms）`
+      );
+    }
+    const devEnv = {
+      ...process.env,
+      ...(devUsePolling
+        ? {
+            CHOKIDAR_USEPOLLING: '1',
+            CHOKIDAR_INTERVAL: String(devPollIntervalMs),
+            WATCHPACK_POLLING: 'true',
+          }
+        : {}),
+    };
+    serverChild = startPersistentCommand(pnpmCommand, resolvedDevArgs, {
+      fileDescriptorLimit: devUlimitNoFile,
+      env: devEnv,
+    });
+    serverChild.on('error', error => {
+      console.error('[profile-cloudflare-startup] dev 服务启动失败:', error);
+    });
+  }
 
   log(`等待服务就绪: ${serverUrl}`);
   await waitForHttpReady(serverUrl, serverReadyTimeoutMs);

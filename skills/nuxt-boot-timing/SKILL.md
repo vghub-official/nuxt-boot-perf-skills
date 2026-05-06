@@ -18,10 +18,23 @@ description: >-
 按顺序完成，详见 [references/trigger-checklist.md](./references/trigger-checklist.md)。
 
 1. 定位含 Nuxt 的 `package.json` 与**实际工作目录**（仓库根或 monorepo 子包根均可；勿假设固定子目录名）。若当前路径对应的 `package.json` **未**声明 `nuxt`，应明确提示用户切换到声明了 `nuxt` 的包根再执行命令，并说明 monorepo 时可能在子目录。
-2. 在 `scripts` 中确认 profile 命令与 **Node 脚本路径** 存在；不存在则勿虚构命令。
-3. 检查 `playwright` 等运行时依赖是否已声明。
-4. 判断是否需要 `pnpm install` / `npx playwright install` / 切换 Node 版本。
-5. 确认本地 dev/preview **URL 可达** 与环境变量端口一致。
+2. 在项目根 `scripts/` 中统一处理以下脚本：`scripts/profile-cloudflare-startup.mjs`、`scripts/startup-resource-profile.mjs`。**必须直接从** `.cursor/skills/nuxt-boot-timing/scripts/` **复制同名文件到项目 `scripts/`（可覆盖）** 后再继续，**禁止现场生成/手写脚本内容**。
+3. 在 Nuxt 根组件（通常是 `app/app.vue`）中补齐 mounted 标记：最后注册一个 `onMounted`，同步执行 `window.__TEENPATTI_APP_ROOT_MOUNTED__ = true` 与 `performance.mark('teenpatti-app-root-mounted')`；若使用 TS，请同步声明 `Window` 字段类型。
+4. 在 `package.json` 的 `scripts` 中确认 profile 命令存在；若缺失，补齐：
+   - `profile:startup-resources`: `node scripts/startup-resource-profile.mjs`
+   - `profile:startup-resources:cf`: `node scripts/profile-cloudflare-startup.mjs`
+   - `profile:startup-resources:dev`: `n exec 22.19.0 env STARTUP_PROFILE_SERVER_MODE=dev node scripts/profile-cloudflare-startup.mjs`
+   - `profile:startup-resources:normal`: `STARTUP_PROFILE_USE_CACHE=1 STARTUP_PROFILE_NO_THROTTLE=1 node scripts/startup-resource-profile.mjs`
+5. 检查 `playwright` 等运行时依赖是否已声明。
+6. 判断是否需要 `pnpm install` / `npx playwright install` / 切换 Node 版本。
+7. 确认本地 dev/preview **URL 可达** 与环境变量端口一致。
+
+### Node 与 ABI 约束（必看）
+
+- 若项目声明 `engines.node`（例如 `22.x`）或存在 `.nvmrc/.node-version`，profile 与 dev 应强制用该版本运行。
+- 建议把 `dev` 也固定到项目 Node（示例：`n exec 22.19.0 nuxt dev`），避免 `better-sqlite3` 等原生模块出现 ABI 不匹配。
+- 若出现 `NODE_MODULE_VERSION` 报错（如 127 vs 137），先用目标 Node 重新安装依赖，再重试：
+  - `n exec 22.19.0 pnpm install`
 
 ## 阶段模型（摘要）
 
@@ -38,10 +51,6 @@ description: >-
 2. **阶段判定**：对照 SSR/CSR 摘要，用一两句话指出瓶颈落在哪一段。
 3. **证据摘要**：表格列出 Top N 资源或最大 gap（来自 JSON 或 DevTools）。
 4. **建议下一步**：最多三条可执行项（如 preview 复测、关闭 DevTools、懒挂载大弹窗）。
-
-## 机读 JSON（v1）
-
-从终端提取 **可 `JSON.parse` 的对象** 后，**先校验必填键**再下结论。字段约定见 [references/output-schema-v1.md](./references/output-schema-v1.md)。与业务侧 profile 脚本合并时，以该脚本**实际 JSON 输出**为准更新 `references` 与本集合仓内契约测试。
 
 ## 本集合仓维护
 
