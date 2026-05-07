@@ -2,10 +2,14 @@
 
 面向 **Nuxt 3/4** 的 Cursor Agent Skills 集合，聚焦冷启动（boot）、SSR/CSR 边界、首屏资源链路与 `onMounted` 延迟排障。
 
+## 开源地址
+
+[https://github.com/vghub-official/nuxt-boot-perf-skills](https://github.com/vghub-official/nuxt-boot-perf-skills)
+
 ## 可用技能
 
-| 技能                                                | 说明                                                             | 适用场景                                                      |
-| --------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| 技能                                                   | 说明                                                             | 适用场景                                                      |
+| ------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------- |
 | [nuxt-boot-timing](./skills/nuxt-boot-timing/SKILL.md) | 冷启动阶段模型、触发检查清单、脚本接入约定、profile 结论输出格式 | Nuxt 首屏慢、根组件 mounted 很晚、dev 与 preview 体感差异较大 |
 
 ## 快速安装（Cursor）
@@ -25,10 +29,13 @@ cp -R /path/to/nuxt-boot-perf-skills/skills/nuxt-boot-timing ~/.cursor/skills/nu
 
 ### 使用 Skills CLI 安装（类似 `npx skills add`）
 
-若仓库已发布到 GitHub，可直接安装：
+可直接从 GitHub 安装：
 
 ```bash
-npx skills add <owner>/nuxt-boot-perf-skills --skill nuxt-boot-timing -g -y
+# 交互式安装
+npx skills add vghub-official/nuxt-boot-perf-skills
+# 全局安装
+npx skills add vghub-official/nuxt-boot-perf-skills --skill nuxt-boot-timing -g -y
 ```
 
 说明：
@@ -37,25 +44,21 @@ npx skills add <owner>/nuxt-boot-perf-skills --skill nuxt-boot-timing -g -y
 - `-g` 为全局安装到用户级技能目录；不加则按当前项目上下文安装。
 - 不建议使用 `<owner>/<repo>@nuxt-boot-timing` 这种写法，`@...` 常被当作 Git ref（分支或 tag）。
 
-## 配套脚本（供业务仓库复制）
+## 配套脚本
 
-`nuxt-boot-timing` 依赖下列脚本（来源于技能目录）：
+来源均为技能目录 `skills/nuxt-boot-timing/scripts/`。
 
-- `scripts/verify-env.mjs`
-- `scripts/startup-resource-profile.mjs`
-- `scripts/profile-cloudflare-startup.mjs`
+- **须在业务仓库复制**（可覆盖）：`startup-resource-profile.mjs`、`profile-cloudflare-startup.mjs`。
+- **不必复制**：`verify-env.mjs` — 在业务项目的 **Nuxt 包根** 作为当前工作目录，直接用绝对路径调用技能内的脚本即可。
 
 推荐流程：
 
-1. 在业务项目的 Nuxt 包根执行 `verify-env.mjs`（该目录 `package.json` 应声明 `nuxt`）。
-2. 将上面三个脚本复制到业务项目 `scripts/` 目录（可覆盖同名文件）。
+1. 在业务项目的 Nuxt 包根执行环境校验（该目录 `package.json` 应声明 `nuxt`）：
+   ```bash
+   node /path/to/nuxt-boot-perf-skills/skills/nuxt-boot-timing/scripts/verify-env.mjs
+   ```
+2. 将两个 profile 脚本复制到业务项目 `scripts/`。
 3. 在业务项目 `package.json` 中补齐 profile 命令（详见 [SKILL.md](./skills/nuxt-boot-timing/SKILL.md)）。
-
-示例（在 Nuxt 应用根目录执行）：
-
-```bash
-node /path/to/nuxt-boot-perf-skills/skills/nuxt-boot-timing/scripts/verify-env.mjs
-```
 
 ## 目录结构
 

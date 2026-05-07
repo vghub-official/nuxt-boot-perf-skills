@@ -18,7 +18,7 @@ description: >-
 按顺序完成，详见 [references/trigger-checklist.md](./references/trigger-checklist.md)。
 
 1. 定位含 Nuxt 的 `package.json` 与**实际工作目录**（仓库根或 monorepo 子包根均可；勿假设固定子目录名）。若当前路径对应的 `package.json` **未**声明 `nuxt`，应明确提示用户切换到声明了 `nuxt` 的包根再执行命令，并说明 monorepo 时可能在子目录。
-2. 在项目根 `scripts/` 中统一处理以下脚本：`scripts/profile-cloudflare-startup.mjs`、`scripts/startup-resource-profile.mjs`。**必须直接从** `.cursor/skills/nuxt-boot-timing/scripts/` **复制同名文件到项目 `scripts/`（可覆盖）** 后再继续，**禁止现场生成/手写脚本内容**。
+2. **Profile 脚本（须复制）**：将 `scripts/profile-cloudflare-startup.mjs`、`scripts/startup-resource-profile.mjs` **直接从** `.cursor/skills/nuxt-boot-timing/scripts/` **复制到项目 `scripts/`（可覆盖）**，**禁止现场生成/手写脚本内容**。**环境校验脚本 `verify-env.mjs` 不必复制**：在 Nuxt 包根作为 `cwd`，用技能目录下脚本的绝对路径执行即可（见触发清单第三节）。
 3. 在 Nuxt 根组件（通常是 `app/app.vue`）中补齐 mounted 标记：最后注册一个 `onMounted`，同步执行 `window.__TEENPATTI_APP_ROOT_MOUNTED__ = true` 与 `performance.mark('teenpatti-app-root-mounted')`；若使用 TS，请同步声明 `Window` 字段类型。
 4. 在 `package.json` 的 `scripts` 中确认 profile 命令存在；若缺失，补齐：
    - `profile:startup-resources`: `node scripts/startup-resource-profile.mjs`
@@ -26,8 +26,9 @@ description: >-
    - `profile:startup-resources:dev`: `n exec 22.19.0 env STARTUP_PROFILE_SERVER_MODE=dev node scripts/profile-cloudflare-startup.mjs`
    - `profile:startup-resources:normal`: `STARTUP_PROFILE_USE_CACHE=1 STARTUP_PROFILE_NO_THROTTLE=1 node scripts/startup-resource-profile.mjs`
 5. 检查 `playwright` 等运行时依赖是否已声明。
-6. 判断是否需要 `pnpm install` / `npx playwright install` / 切换 Node 版本。
+6. 判断是否需要 `pnpm install` / 切换 Node 版本；若缺 Playwright 浏览器二进制，**仅提示**用户在包根自行执行 `npx playwright install chromium`（或等价），**不要默认代替用户自动执行**（用户明确要求代跑时除外）。
 7. 确认本地 dev/preview **URL 可达** 与环境变量端口一致。
+8. 若已进入 profile / Playwright 测试路径，向用户输出**测试命令**与 **`STARTUP_PROFILE_*` 可配置参数**，格式见 [references/trigger-checklist.md](./references/trigger-checklist.md) 第六节。
 
 ### Node 与 ABI 约束（必看）
 
